@@ -14,6 +14,7 @@ Describe 'Controller isolation boundary' {
 
     It 'does not claim controller isolation is available when HidHide is missing' {
         $config = [pscustomobject]@{ DependencyRoot = Join-Path $TestDrive 'missing'; DataRoot = $TestDrive }
+        Mock Get-HidHideCliPath { throw 'HidHide is not installed.' } -ModuleName ControllerIsolation
         (Test-HidHideReady -Config $config) | Should Be $false
     }
 }

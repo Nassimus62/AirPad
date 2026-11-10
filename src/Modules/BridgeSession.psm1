@@ -16,6 +16,63 @@ function Test-BridgeTarget {
     $device
 }
 
+function Stop-BridgeProcess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][int]$ProcessId,
+        [Parameter(Mandatory)][string]$ScrcpyPath
+    )
+
+    if ($ProcessId -le 0) { return }
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $process -or $process.ProcessName -ne 'scrcpy') { return }
+    try { $actualPath = [string]$process.Path }
+    catch { throw "Cannot verify the recorded scrcpy process path for PID ${ProcessId}: $($_.Exception.Message)" }
+    if (-not $actualPath) { throw "Cannot verify the recorded scrcpy process path for PID $ProcessId." }
+    if ($actualPath -ine $ScrcpyPath) { return }
+
+    $stopError = $null
+    try { Stop-Process -Id $ProcessId -Force -ErrorAction Stop }
+    catch { $stopError = $_.Exception.Message }
+    try { Wait-Process -Id $ProcessId -Timeout 5 -ErrorAction Stop } catch { }
+
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($process -and $process.ProcessName -eq 'scrcpy') {
+        try { $actualPath = [string]$process.Path }
+        catch { throw "Cannot confirm scrcpy process $ProcessId has stopped: $($_.Exception.Message)" }
+        if (-not $actualPath) { throw "Cannot confirm scrcpy process $ProcessId has stopped." }
+        if ($actualPath -ieq $ScrcpyPath) {
+            if ($stopError) { throw "Could not stop scrcpy process ${ProcessId}: $stopError" }
+            throw "scrcpy process $ProcessId is still running after the stop request."
+        }
+    }
+}
+
+function Complete-BridgeSession {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Config,
+        [Parameter(Mandatory)]$State,
+        [Parameter(Mandatory)][int]$ProcessId,
+        [Parameter(Mandatory)][string]$ScrcpyPath
+    )
+
+    if ($ProcessId -gt 0) {
+        try { Stop-BridgeProcess -ProcessId $ProcessId -ScrcpyPath $ScrcpyPath }
+        catch {
+            Write-Warning "Could not confirm scrcpy has stopped; controller isolation and recovery state were retained. Stop scrcpy manually, then run .\run.ps1 -Recover. $($_.Exception.Message)"
+            return $false
+        }
+    }
+    try {
+        Restore-BridgeControllerVisibility -Config $Config -State $State
+        Write-Host 'Bridge stopped. Controller visibility was restored on Windows.'
+    } catch {
+        Write-Warning "Controller visibility restoration needs attention. Run .\run.ps1 -Recover. $($_.Exception.Message)"
+    }
+    $true
+}
+
 function Start-BridgeSession {
     [CmdletBinding()]
     param(
@@ -64,16 +121,9 @@ function Start-BridgeSession {
             Start-Sleep -Milliseconds 100
         }
     } finally {
-        if ($process -and -not $process.HasExited) {
-            try { Stop-Process -Id $process.Id -Force -ErrorAction Stop } catch { Write-Warning "Could not stop scrcpy process $($process.Id): $($_.Exception.Message)" }
-        }
         if ($state) {
-            try {
-                Restore-BridgeControllerVisibility -Config $Config -State $state
-                Write-Host 'Bridge stopped. Controller visibility was restored on Windows.'
-            } catch {
-                Write-Warning "Controller visibility restoration needs attention. Run .\run.ps1 -Recover. $($_.Exception.Message)"
-            }
+            $processId = if ($process) { [int]$process.Id } else { 0 }
+            $null = Complete-BridgeSession -Config $Config -State $state -ProcessId $processId -ScrcpyPath $scrcpyPath
         }
     }
 }
@@ -91,13 +141,7 @@ function Restore-InterruptedBridgeSession {
     }
     $state = Get-Content -LiteralPath $recoveryPath -Raw | ConvertFrom-Json
     if ($state.ProcessId) {
-        $process = Get-Process -Id ([int]$state.ProcessId) -ErrorAction SilentlyContinue
-        if ($process -and $process.ProcessName -eq 'scrcpy') {
-            try {
-                $actualPath = $process.Path
-                if ($actualPath -and $actualPath -ieq [string]$state.ScrcpyPath) { Stop-Process -Id $process.Id -Force }
-            } catch { Write-Warning "Could not stop the recorded scrcpy process: $($_.Exception.Message)" }
-        }
+        Stop-BridgeProcess -ProcessId ([int]$state.ProcessId) -ScrcpyPath ([string]$state.ScrcpyPath)
     }
     Restore-BridgeControllerVisibility -Config $Config -State $state
     if ($recoveryPath -ne $Config.RecoveryPath -and (Test-Path -LiteralPath $recoveryPath)) { Remove-Item -LiteralPath $recoveryPath -Force }
