@@ -1,0 +1,17 @@
+name: PowerShell tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pester:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester 3.4
+        shell: powershell
+        run: Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser
+      - name: Run tests under Windows PowerShell 5.1
+        shell: powershell
+        run: Invoke-Pester ./tests

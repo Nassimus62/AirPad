@@ -1,0 +1,18 @@
+# Downloaded third-party binaries and archives
+/.local-dependencies/
+/dependencies/
+*.zip
+*.exe
+
+# Runtime state and logs
+*.log
+/recovery.json
+/state/
+/logs/
+
+# PowerShell/editor artifacts
+*.ps1xml
+*.bak
+.vscode/
+.DS_Store
+Thumbs.db
