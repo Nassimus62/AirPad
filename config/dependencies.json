@@ -1,7 +1,7 @@
 {
   "platformTools": {
-    "version": "36.0.2",
-    "url": "https://dl.google.com/android/repository/platform-tools_r36.0.2-windows.zip",
+    "version": "37.0.3",
+    "url": "https://dl.google.com/android/repository/platform-tools_r37.0.3-win.zip",
     "sha256": null,
     "archive": true
   },
